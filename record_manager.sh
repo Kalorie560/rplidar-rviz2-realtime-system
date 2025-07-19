@@ -103,10 +103,15 @@ list_recordings() {
 play_recording() {
     echo -e "${BLUE}▶️  録画再生${NC}"
     
-    # 利用可能なbagファイル一覧
-    recordings=(lidar_recording_*)
+    # 利用可能なbagファイル一覧（ディレクトリのみ）
+    recordings=()
+    for item in lidar_recording_*; do
+        if [ -d "$item" ]; then
+            recordings+=("$item")
+        fi
+    done
     
-    if [ ! -d "${recordings[0]}" ]; then
+    if [ ${#recordings[@]} -eq 0 ]; then
         echo -e "${YELLOW}📭 再生可能な録画がありません${NC}"
         return
     fi
@@ -115,7 +120,16 @@ play_recording() {
     counter=1
     for bag_dir in "${recordings[@]}"; do
         if [ -d "$bag_dir" ]; then
-            echo "  $counter. $bag_dir"
+            # ディレクトリサイズと作成日時を表示
+            size=$(du -sh "$bag_dir" 2>/dev/null | cut -f1)
+            date=$(stat -c %y "$bag_dir" 2>/dev/null | cut -d' ' -f1,2 | cut -d'.' -f1)
+            echo "  $counter. $bag_dir (${size:-不明}, ${date:-不明})"
+            
+            # .db3ファイルの詳細も表示
+            if ls "$bag_dir"/*.db3 >/dev/null 2>&1; then
+                db3_count=$(ls "$bag_dir"/*.db3 2>/dev/null | wc -l)
+                echo "     📁 ${db3_count}個のデータファイル"
+            fi
             ((counter++))
         fi
     done
@@ -145,22 +159,29 @@ play_recording() {
         echo -n "選択: "
         read -r play_option
         
+        # ディレクトリ内のdb3ファイルを直接指定
+        db3_file=$(find "$selected_bag" -name "*.db3" -type f | head -1)
+        if [ -z "$db3_file" ]; then
+            echo -e "${RED}❌ データファイルが見つかりません${NC}"
+            return
+        fi
+        
         case "$play_option" in
             "2")
                 echo "🔄 ループ再生中..."
-                ros2 bag play "$selected_bag" --loop
+                ros2 bag play "$db3_file" --loop
                 ;;
             "3")
                 echo "🐌 0.5倍速再生中..."
-                ros2 bag play "$selected_bag" --rate 0.5
+                ros2 bag play "$db3_file" --rate 0.5
                 ;;
             "4")
                 echo "🚀 2倍速再生中..."
-                ros2 bag play "$selected_bag" --rate 2.0
+                ros2 bag play "$db3_file" --rate 2.0
                 ;;
             *)
                 echo "▶️  通常再生中..."
-                ros2 bag play "$selected_bag"
+                ros2 bag play "$db3_file"
                 ;;
         esac
         

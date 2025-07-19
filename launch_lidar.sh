@@ -125,8 +125,10 @@ case "$choice" in
     "p"|"P")
         echo -e "${BLUE}📼 再生モード選択${NC}"
         
-        # 利用可能なbagファイル一覧
+        # 利用可能なbagファイル一覧（サブディレクトリも含む）
         echo "利用可能な録画ファイル:"
+        
+        # 現在のディレクトリのdb3ファイル
         ls -la *.db3 2>/dev/null | grep -E "lidar_recording_.*\.db3$" | while read -r line; do
             filename=$(echo "$line" | awk '{print $9}')
             size=$(echo "$line" | awk '{print $5}')
@@ -134,11 +136,39 @@ case "$choice" in
             echo "  📁 $filename ($size bytes, $date)"
         done
         
+        # サブディレクトリのdb3ファイル
+        find . -name "lidar_recording_*" -type d 2>/dev/null | while read -r dir; do
+            if [ -d "$dir" ]; then
+                echo "  📂 $dir/"
+                ls -la "$dir"/*.db3 2>/dev/null | while read -r line; do
+                    filename=$(echo "$line" | awk '{print $9}')
+                    basename_file=$(basename "$filename")
+                    size=$(echo "$line" | awk '{print $5}')
+                    date=$(echo "$line" | awk '{print $6, $7, $8}')
+                    echo "    📁 $basename_file ($size bytes, $date)"
+                done
+            fi
+        done
+        
         echo ""
-        echo -n "再生するbagファイル名を入力 (拡張子なし): "
+        echo -n "再生するbagファイル名を入力 (ディレクトリ名 または ファイル名): "
         read -r bag_name
         
-        if [ -f "${bag_name}" ]; then
+        # ディレクトリ名として存在するかチェック
+        if [ -d "${bag_name}" ]; then
+            bag_path="${bag_name}"
+        # ファイル名として存在するかチェック
+        elif [ -f "${bag_name}" ]; then
+            bag_path="${bag_name}"
+        # サブディレクトリ内のファイルを検索
+        else
+            bag_path=$(find . -name "${bag_name}.db3" -type f 2>/dev/null | head -1)
+            if [ -z "$bag_path" ]; then
+                bag_path=$(find . -name "${bag_name}" -type d 2>/dev/null | head -1)
+            fi
+        fi
+        
+        if [ -n "$bag_path" ]; then
             # RViz2起動（バックグラウンド）
             echo -e "${GREEN}📊 RViz2起動中...${NC}"
             rviz2 -d "$WORKSPACE_DIR/lidar_config.rviz" &
@@ -146,10 +176,21 @@ case "$choice" in
             sleep 3
             
             # rosbag再生
-            echo -e "${BLUE}▶️  再生開始: $bag_name${NC}"
-            ros2 bag play "$bag_name" --loop
+            echo -e "${BLUE}▶️  再生開始: $bag_path${NC}"
+            if [ -d "$bag_path" ]; then
+                # ディレクトリ内のdb3ファイルを直接指定
+                db3_file=$(find "$bag_path" -name "*.db3" -type f | head -1)
+                if [ -n "$db3_file" ]; then
+                    ros2 bag play "$db3_file" --loop
+                else
+                    echo -e "${RED}❌ データファイルが見つかりません${NC}"
+                fi
+            else
+                ros2 bag play "$bag_path" --loop
+            fi
         else
             echo -e "${RED}❌ ファイルが見つかりません: $bag_name${NC}"
+            echo "利用可能なファイルを上記リストから選択してください"
         fi
         ;;
         
